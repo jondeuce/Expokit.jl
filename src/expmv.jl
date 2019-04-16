@@ -7,7 +7,7 @@ function default_anorm(A)
         if err isa MethodError
             @warn "opnorm($(typeof(A)), Inf) is not defined, fall back to using `anorm = 1.0`.
 To suppress this warning, please specify the `anorm` keyword manually."
-            1.0
+            1
         else
             throw(err)
         end
@@ -16,7 +16,7 @@ end
 
 
 """
-    expmv{T}(t, A, vec; [tol], [m], [norm], [anorm])
+    expmv(t, A, vec; [tol], [m], [norm], [anorm])
 
 Calculate matrix exponential acting on some vector, ``w = e^{tA}v``,
 using the Krylov subspace approximation.
@@ -25,51 +25,57 @@ See R.B. Sidje, ACM Trans. Math. Softw., 24(1):130-156, 1998
 and http://www.maths.uq.edu.au/expokit
 """
 function expmv( t::Number,
-                   A, vec::Vector{T};
+                   A, vec::AbstractVector{Tv};
                    tol::Real=1e-7,
                    m::Int=min(30, size(A, 1)),
-                   norm=LinearAlgebra.norm, anorm=default_anorm(A)) where {T}
+                   norm=LinearAlgebra.norm, anorm=default_anorm(A)) where {Tv}
 
-    result = convert(Vector{promote_type(eltype(A), T, typeof(t))}, copy(vec))
+    result = convert(AbstractVector{promote_type(eltype(A), Tv, typeof(t))}, copy(vec))
     expmv!(t, A, result; tol=tol, m=m, norm=norm, anorm=anorm)
     return result
 end
 
 expmv!( t::Number,
-           A, vec::Vector{T};
+           A, vec::AbstractVector;
            tol::Real=1e-7,
            m::Int=min(30,size(A,1)),
-           norm=LinearAlgebra.norm, anorm=default_anorm(A)) where {T} = expmv!(vec, t, A, vec; tol=tol, m=m, norm=norm, anorm=anorm)
+           norm=LinearAlgebra.norm, anorm=default_anorm(A)) = expmv!(vec, t, A, vec; tol=tol, m=m, norm=norm, anorm=anorm)
 
-function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
-                   tol::Real=1e-7, m::Int=min(30,size(A,1)), norm=LinearAlgebra.norm, anorm=default_anorm(A)) where {T}
+function expmv!(w::AbstractVector{Tv}, t::Number, A, vec::AbstractVector{Tv};
+                   tol::Real=1e-7, m::Int=min(30,size(A,1)), norm=LinearAlgebra.norm, anorm=default_anorm(A)) where {Tv}
 
     if size(vec,1) != size(A,2)
         error("dimension mismatch")
     end
 
-    # safety factors
-    gamma = 0.9
-    delta = 1.2
+    # Convert inputs to output types
+    T = real(Tv)
+    t = T(t)
+    tol = T(tol)
+    anorm = T(anorm)
+    rndoff= anorm*eps(T)
 
-    btol = 1e-7     # tolerance for "happy-breakdown"
+    # safety factors
+    gamma = T(0.9)
+    delta = T(1.2)
+
+    btol = T(1e-7)     # tolerance for "happy-breakdown"
     maxiter = 10    # max number of time-step refinements
 
-    rndoff= anorm*eps()
-
     # estimate first time-step and round to two significant digits
-    beta = norm(vec)
-    r = 1/m
-    fact = (((m+1)/exp(1.0))^(m+1))*sqrt(2.0*pi*(m+1))
-    tau = (1.0/anorm)*((fact*tol)/(4.0*beta*anorm))^r
+    beta = T(norm(vec))
+    r = inv(T(m))
+    fact = ((T(m+1)/ℯ)^(m+1))*sqrt(2*T(π)*(m+1))
+    tau = inv(anorm)*((fact*tol)/(4beta*anorm))^r
     tau = round(tau, sigdigits=2)
 
     # storage for Krylov subspace vectors
-    vm = Array{typeof(w)}(undef,m+1)
-    for i=1:m+1
-        vm[i]=similar(w)
-    end
-    hm = zeros(T,m+2,m+2)
+    # vm = Array{typeof(w)}(undef,m+1)
+    # for i=1:m+1
+    #     vm[i]=similar(w)
+    # end
+    vm = [similar(w) for _ in 1:m+1]
+    hm = zeros(Tv,m+2,m+2)
 
     tf = abs(t)
     tsgn = sign(t)
@@ -83,7 +89,7 @@ function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
 
         # Arnoldi procedure
         # vm[1] = v/beta
-        rmul!(copyto!(vm[1],w),1/beta)
+        rmul!(copyto!(vm[1],w),inv(beta))
         mx = m
         for j=1:m
             # p[:] = A*vm[j]
@@ -104,7 +110,7 @@ function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
                 # F = expm!(scale(tsgn*tau,view(hm,1:j,1:j)))
                 F = exp!(tsgn*tau*view(hm,1:j,1:j))
 
-                fill!(w, zero(T))
+                fill!(w, zero(Tv))
                 for k=1:j
                     # w[:] = w + beta*vm[k]*F[k,1]
                     w = axpy!(beta*F[k,1], vm[k], w)
@@ -115,9 +121,9 @@ function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
             hm[j+1,j] = s
 
             # vm[j+1] = p/hm[j+1,j]
-            rmul!(copyto!(vm[j+1],p),1/hm[j+1,j])
+            rmul!(copyto!(vm[j+1],p),inv(hm[j+1,j]))
         end
-        hm[m+2,m+1] = one(T)
+        hm[m+2,m+1] = one(Tv)
         (mx != m) || (avnorm = norm(mul!(p,A,vm[m+1])))
 
         # propagate using adaptive step size
@@ -134,18 +140,18 @@ function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
 
             if err1 > 10*err2	# err1 >> err2
                 err_loc = err2
-                r = 1/m
+                r = inv(T(m))
             elseif err1 > err2
                 err_loc = (err1*err2)/(err1-err2)
-                r = 1/m
+                r = inv(T(m))
             else
                 err_loc = err1
-                r = 1/(m-1)
+                r = inv(T((m-1)))
             end
 
             # time-step sufficient?
             if err_loc <= delta * tau * (tau*tol/err_loc)^r
-                fill!(w, zero(T))
+                fill!(w, zero(Tv))
                 for k=1:m+1
                     # w[:] = w + beta*vm[k]*F[k,1]
                     w = axpy!(beta*F[k,1], vm[k], w)
@@ -171,7 +177,7 @@ function expmv!(w::Vector{T}, t::Number, A, vec::Vector{T};
                              # to prevent numerical noise
         err_loc = max(err_loc,rndoff)
 
-        fill!(hm, zero(T))
+        fill!(hm, zero(Tv))
     end
 
     return w
