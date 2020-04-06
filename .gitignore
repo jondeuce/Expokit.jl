@@ -1,2 +1,9 @@
 .DS_Store
 .DS_Store?
+*.jl.*.cov
+*.jl.cov
+*.jl.mem
+/Manifest.toml
+/dev/
+/docs/build/
+/docs/site/

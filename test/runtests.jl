@@ -61,7 +61,8 @@ function test_expmv_linop(n::Int)
 
     t1 = @elapsed w1 = expmv(1.0, A, v, anorm=norm(A.m, Inf))
 
-    t2 = @elapsed w2 = expmv(1.0, A, v)
+    #set `anorm` explicitly to suppress `opnorm(LinearOp, Inf) is not defined` warning
+    t2 = @elapsed w2 = expmv(1.0, A, v; anorm=1.0)
 
     t3 = @elapsed w3 = expm_higham(Matrix(A.m))*v
 
@@ -290,8 +291,9 @@ function test_phimv_linop(n::Int)
     end
     vec = ev1(n)
 
-    w1 = phimv(1.0, A, u, vec) # warmup
-    t1 = @elapsed w1 = phimv(1.0, A, u, vec)
+    # set `anorm` explicitly to suppress `opnorm(LinearOp, Inf) is not defined` warning
+    w1 = phimv(1.0, A, u, vec; anorm = 1.0) # warmup
+    t1 = @elapsed w1 = phimv(1.0, A, u, vec; anorm = 1.0)
 
     w2 = expm_higham(Matrix(A.m))*(vec+x)-x # warmup
     t2 = @elapsed w2 = expm_higham(Matrix(A.m))*(vec+x)-x
